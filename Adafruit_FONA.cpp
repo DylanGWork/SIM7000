@@ -2436,7 +2436,7 @@ boolean Adafruit_FONA::MQTTdisconnect(void) {
 // Parameter tags can be "CLIENTID", "URL", "KEEPTIME", "CLEANSS", "USERNAME",
 // "PASSWORD", "QOS", "TOPIC", "MESSAGE", or "RETAIN"
 boolean Adafruit_FONA_LTE::MQTT_setParameter(const char* paramTag, const char* paramValue, uint16_t port) {
-  char cmdStr[50];
+  char cmdStr[100];
 
   if (strcmp(paramTag, "CLIENTID") == 0 || strcmp(paramTag, "URL") == 0 || strcmp(paramTag, "TOPIC") == 0 || strcmp(paramTag, "MESSAGE") == 0) {
     if (port == 0) sprintf(cmdStr, "AT+SMCONF=\"%s\",\"%s\"", paramTag, paramValue); // Quoted paramValue
@@ -2466,7 +2466,7 @@ boolean Adafruit_FONA_LTE::MQTT_connectionStatus(void) {
 // Subscribe to specified MQTT topic
 // QoS can be from 0-2
 boolean Adafruit_FONA_LTE::MQTT_subscribe(const char* topic, byte QoS) {
-  char cmdStr[32];
+  char cmdStr[80];
   sprintf(cmdStr, "AT+SMSUB=\"%s\",%i", topic, QoS);
 
   if (! sendCheckReply(cmdStr, ok_reply)) return false;
@@ -2475,7 +2475,7 @@ boolean Adafruit_FONA_LTE::MQTT_subscribe(const char* topic, byte QoS) {
 
 // Unsubscribe from specified MQTT topic
 boolean Adafruit_FONA_LTE::MQTT_unsubscribe(const char* topic) {
-  char cmdStr[32];
+  char cmdStr[80];
   sprintf(cmdStr, "AT+SMUNSUB=\"%s\"", topic);
   if (! sendCheckReply(cmdStr, ok_reply)) return false;
   return true;
@@ -2486,7 +2486,7 @@ boolean Adafruit_FONA_LTE::MQTT_unsubscribe(const char* topic) {
 // QoS can be from 0-2
 // Server hold message flag can be 0 or 1
 boolean Adafruit_FONA_LTE::MQTT_publish(const char* topic, const char* message, uint16_t contentLength, byte QoS, byte retain) {
-  char cmdStr[40];
+  char cmdStr[80];
   sprintf(cmdStr, "AT+SMPUB=\"%s\",%i,%i,%i", topic, contentLength, QoS, retain);
 
   getReply(cmdStr, 20000);
