@@ -83,6 +83,12 @@
 #define FONA_CALL_RINGING 3
 #define FONA_CALL_INPROGRESS 4
 
+#ifdef ADAFRUIT_FONA_LONG_TIMEOUT
+typedef uint32_t fona_timeout_t;
+#else
+typedef uint16_t fona_timeout_t;
+#endif
+
 class Adafruit_FONA : public FONAStreamType {
  public:
   Adafruit_FONA(int8_t);
@@ -157,7 +163,7 @@ class Adafruit_FONA : public FONAStreamType {
   boolean readRTC(uint8_t *year, uint8_t *month, uint8_t *date, uint8_t *hr, uint8_t *min, uint8_t *sec);
 
   // GPRS handling
-  boolean enableGPRS(boolean onoff);
+  boolean enableGPRS(boolean onoff, fona_timeout_t timeout=10000);
   int8_t GPRSstate(void);
   boolean getGSMLoc(uint16_t *replycode, char *buff, uint16_t maxlen);
   boolean getGSMLoc(float *lat, float *lon);
@@ -236,10 +242,10 @@ class Adafruit_FONA : public FONAStreamType {
   boolean incomingCallNumber(char* phonenum);
 
   // Helper functions to verify responses.
-  boolean expectReply(FONAFlashStringPtr reply, uint16_t timeout = 10000);
-  boolean sendCheckReply(const char *send, const char *reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  boolean sendCheckReply(FONAFlashStringPtr send, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  boolean sendCheckReply(const char* send, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean expectReply(FONAFlashStringPtr reply, fona_timeout_t timeout = 10000);
+  boolean sendCheckReply(const char *send, const char *reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReply(FONAFlashStringPtr send, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReply(const char* send, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
 
 
  protected:
@@ -259,18 +265,18 @@ class Adafruit_FONA : public FONAStreamType {
 
   void flushInput();
   uint16_t readRaw(uint16_t b);
-  uint8_t readline(uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS, boolean multiline = false);
-  uint8_t getReply(const char *send, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  uint8_t getReply(FONAFlashStringPtr send, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  uint8_t getReply(FONAFlashStringPtr prefix, char *suffix, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  uint8_t getReply(FONAFlashStringPtr prefix, int32_t suffix, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  uint8_t getReply(FONAFlashStringPtr prefix, int32_t suffix1, int32_t suffix2, uint16_t timeout); // Don't set default value or else function call is ambiguous.
-  uint8_t getReplyQuoted(FONAFlashStringPtr prefix, FONAFlashStringPtr suffix, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  uint8_t readline(fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS, boolean multiline = false);
+  uint8_t getReply(const char *send, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  uint8_t getReply(FONAFlashStringPtr send, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  uint8_t getReply(FONAFlashStringPtr prefix, char *suffix, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  uint8_t getReply(FONAFlashStringPtr prefix, int32_t suffix, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  uint8_t getReply(FONAFlashStringPtr prefix, int32_t suffix1, int32_t suffix2, fona_timeout_t timeout); // Don't set default value or else function call is ambiguous.
+  uint8_t getReplyQuoted(FONAFlashStringPtr prefix, FONAFlashStringPtr suffix, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
 
-  boolean sendCheckReply(FONAFlashStringPtr prefix, char *suffix, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  boolean sendCheckReply(FONAFlashStringPtr prefix, int32_t suffix, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  boolean sendCheckReply(FONAFlashStringPtr prefix, int32_t suffix, int32_t suffix2, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
-  boolean sendCheckReplyQuoted(FONAFlashStringPtr prefix, FONAFlashStringPtr suffix, FONAFlashStringPtr reply, uint16_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReply(FONAFlashStringPtr prefix, char *suffix, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReply(FONAFlashStringPtr prefix, int32_t suffix, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReply(FONAFlashStringPtr prefix, int32_t suffix, int32_t suffix2, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
+  boolean sendCheckReplyQuoted(FONAFlashStringPtr prefix, FONAFlashStringPtr suffix, FONAFlashStringPtr reply, fona_timeout_t timeout = FONA_DEFAULT_TIMEOUT_MS);
 
   void mqtt_connect_message(const char *protocol, byte *mqtt_message, const char *client_id, const char *username, const char *password);
   void mqtt_publish_message(byte *mqtt_message, const char *topic, const char *message);
@@ -340,11 +346,11 @@ class Adafruit_FONA_LTE : public Adafruit_FONA {
 
   // MQTT
   boolean MQTT_setParameter(const char* paramTag, const char* paramValue, uint16_t port = 0);
-  boolean MQTT_connect(bool yesno);
+  boolean MQTT_connect(bool yesno, fona_timeout_t timeout=10000);
   boolean MQTT_connectionStatus(void);
   boolean MQTT_subscribe(const char* topic, byte QoS);
   boolean MQTT_unsubscribe(const char* topic);
-  boolean MQTT_publish(const char* topic, const char* message, uint16_t contentLength, byte QoS, byte retain);
+  boolean MQTT_publish(const char* topic, const char* message, uint16_t contentLength, byte QoS, byte retain, fona_timeout_t timeout = 20000);
   boolean MQTT_dataFormatHex(bool yesno);
 
   // SSL
