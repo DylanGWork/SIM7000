@@ -28,9 +28,9 @@ Adafruit_FONA::Adafruit_FONA(int8_t rst)
   _rstpin = rst;
 
   // apn = F("FONAnet");
-  apn = F("");
-  apnusername = 0;
-  apnpassword = 0;
+  apn[0] = '\0';
+  apnusername[0] = '\0';
+  apnpassword[0] = '\0';
   mySerial = 0;
   httpsredirect = false;
   useragent = F("FONA");
@@ -41,7 +41,7 @@ uint8_t Adafruit_FONA::type(void) {
   return _type;
 }
 
-boolean Adafruit_FONA::begin(Stream &port) {
+boolean Adafruit_FONA::begin(Stream &port,fona_timeout_t timeout) {
   mySerial = &port;
 
   if (_rstpin != 99) { // Pulse the reset pin only if it's not an LTE module
@@ -54,10 +54,8 @@ boolean Adafruit_FONA::begin(Stream &port) {
     digitalWrite(_rstpin, HIGH);
   }
 
-  DEBUG_PRINTLN(F("Attempting to open comm with ATs"));
-  // give 7 seconds to reboot
-  int16_t timeout = 7000;
-
+  DEBUG_PRINTLN(F("Attempting to elicit modem response to AT"));
+  // give 12 seconds to reboot
   while (timeout > 0) {
     while (mySerial->available()) mySerial->read();
     if (sendCheckReply(F("AT"), ok_reply))
@@ -65,14 +63,18 @@ boolean Adafruit_FONA::begin(Stream &port) {
     while (mySerial->available()) mySerial->read();
     if (sendCheckReply(F("AT"), F("AT"))) 
       break;
-    delay(500);
-    timeout-=500;
+    delay(1000);
+    timeout-=1000;
   }
 
   if (timeout <= 0) {
 #ifdef ADAFRUIT_FONA_DEBUG
     DEBUG_PRINTLN(F("Timeout: No response to AT... last ditch attempt."));
 #endif
+    write('+');
+    write('+');
+    write('+');
+    delay(3000);
     sendCheckReply(F("AT"), ok_reply);
     delay(100);
     sendCheckReply(F("AT"), ok_reply);
@@ -86,8 +88,10 @@ boolean Adafruit_FONA::begin(Stream &port) {
   delay(100);
 
   if (! sendCheckReply(F("ATE0"), ok_reply)) {
+    DEBUG_PRINTLN(F("Modem not responding to ATE0"));
     return false;
   }
+  DEBUG_PRINTLN(F("Modem responded correctly to ATE0"));
 
   // turn on hangupitude
   if (_rstpin != 99) sendCheckReply(F("AT+CVHU=0"), ok_reply);
@@ -95,15 +99,13 @@ boolean Adafruit_FONA::begin(Stream &port) {
   delay(100);
   flushInput();
 
-
   DEBUG_PRINT(F("\t---> ")); DEBUG_PRINTLN("ATI");
 
   mySerial->println("ATI");
   readline(500, true);
 
-  DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
-
-
+  DEBUG_PRINT (F("\t<--- [")); DEBUG_PRINT(replybuffer); DEBUG_PRINTLN("]");
+  flushInput();
 
   if (prog_char_strstr(replybuffer, (prog_char *)F("SIM808 R14")) != 0) {
     _type = SIM808_V2;
@@ -134,29 +136,42 @@ boolean Adafruit_FONA::begin(Stream &port) {
   } else if (prog_char_strstr(replybuffer, (prog_char *)F("SIM7600E")) != 0) {
     _type = SIM7600E;
   }
-
+  else {
+	  DEBUG_PRINT("Unknown modem type: ");
+	  DEBUG_PRINTLN(replybuffer);
+	  return false;
+  }
 
   if (_type == SIM800L) {
     // determine if L or H
 
-  DEBUG_PRINT(F("\t---> ")); DEBUG_PRINTLN("AT+GMM");
+    DEBUG_PRINT(F("\t---> ")); DEBUG_PRINTLN("AT+GMM");
 
     mySerial->println("AT+GMM");
     readline(500, true);
 
-  DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
-
+    DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
 
     if (prog_char_strstr(replybuffer, (prog_char *)F("SIM800H")) != 0) {
       _type = SIM800H;
     }
   }
 
-#if defined(FONA_PREF_SMS_STORAGE)
-    sendCheckReply(F("AT+CPMS=" FONA_PREF_SMS_STORAGE "," FONA_PREF_SMS_STORAGE "," FONA_PREF_SMS_STORAGE), ok_reply);
+  bool success = true;
+  
+#if 0 // defined(FONA_PREF_SMS_STORAGE)
+  if (!sendCheckReply(F("AT+CPMS=" FONA_PREF_SMS_STORAGE "," FONA_PREF_SMS_STORAGE "," FONA_PREF_SMS_STORAGE), ok_reply)) {
+	  DEBUG_PRINTLN("SMS setup failed");
+	  success = false;
+  }
 #endif
 
-  return true;
+  if (!sendCheckReply(F("AT"), ok_reply)) {
+	  DEBUG_PRINTLN("Modem not responding to AT");
+	  success = false;
+  }
+
+  return success;
 }
 
 
@@ -1411,27 +1426,32 @@ boolean Adafruit_FONA::enableGPRS(boolean onoff, fona_timeout_t timeout) {
 
 
 	    // set bearer profile access point name
-	    if (apn) {
+	    if (apn[0]) {
 	      // Send command AT+CGSOCKCONT=1,"IP","<apn value>" where <apn value> is the configured APN name.
 	      if (! sendCheckReplyQuoted(F("AT+CGSOCKCONT=1,\"IP\","), apn, ok_reply, 10000))
 	        return false;
 
 	      // set username/password
-	      if (apnusername) {
+	      if (apnusername[0]) {
 					char authstring[100] = "AT+CGAUTH=1,1,\"";
           // char authstring[100] = "AT+CSOCKAUTH=1,1,\""; // For 3G
 					char *strp = authstring + strlen(authstring);
-					prog_char_strcpy(strp, (prog_char *)apnusername);
-					strp+=prog_char_strlen((prog_char *)apnusername);
+					strcpy(strp, apnusername);
+					strp+=strlen(apnusername);
+					//prog_char_strcpy(strp, (prog_char *)apnusername);
+					//strp+=prog_char_strlen((prog_char *)apnusername);
+
 					strp[0] = '\"';
 					strp++;
 					strp[0] = 0;
 
-					if (apnpassword) {
+					if (apnpassword[0]) {
 					  strp[0] = ','; strp++;
 					  strp[0] = '\"'; strp++;
-					  prog_char_strcpy(strp, (prog_char *)apnpassword);
-					  strp+=prog_char_strlen((prog_char *)apnpassword);
+					  strcpy(strp, apnpassword);
+					  strp+=strlen(apnpassword);
+					  //prog_char_strcpy(strp, (prog_char *)apnpassword);
+					  //strp+=prog_char_strlen((prog_char *)apnpassword);
 					  strp[0] = '\"';
 					  strp++;
 					  strp[0] = 0;
@@ -1494,7 +1514,7 @@ boolean Adafruit_FONA::enableGPRS(boolean onoff, fona_timeout_t timeout) {
 		 	delay(200); // This seems to help the next line run the first time
 	    
 	    // set bearer profile access point name
-	    if (apn) {
+	    if (apn[0]) {
 	      // Send command AT+SAPBR=3,1,"APN","<apn value>" where <apn value> is the configured APN value.
 	      if (! sendCheckReplyQuoted(F("AT+SAPBR=3,1,\"APN\","), apn, ok_reply, 10000))
 	        return false;
@@ -1505,11 +1525,11 @@ boolean Adafruit_FONA::enableGPRS(boolean onoff, fona_timeout_t timeout) {
 
   	      mySerial->print(F("AT+CSTT=\""));
   	      mySerial->print(apn);
-  	      if (apnusername) {
+  	      if (apnusername[0]) {
   					mySerial->print("\",\"");
   					mySerial->print(apnusername);
   	      }
-  	      if (apnpassword) {
+  	      if (apnpassword[0]) {
   					mySerial->print("\",\"");
   					mySerial->print(apnpassword);
   	      }
@@ -1518,11 +1538,11 @@ boolean Adafruit_FONA::enableGPRS(boolean onoff, fona_timeout_t timeout) {
   	      DEBUG_PRINT(F("\t---> ")); DEBUG_PRINT(F("AT+CSTT=\""));
   	      DEBUG_PRINT(apn);
   	      
-  	      if (apnusername) {
+  	      if (apnusername[0]) {
   					DEBUG_PRINT("\",\"");
   					DEBUG_PRINT(apnusername); 
   	      }
-  	      if (apnpassword) {
+  	      if (apnpassword[0]) {
   					DEBUG_PRINT("\",\"");
   					DEBUG_PRINT(apnpassword); 
   	      }
@@ -1532,12 +1552,12 @@ boolean Adafruit_FONA::enableGPRS(boolean onoff, fona_timeout_t timeout) {
         // } // UNCOMMENT FOR LTE ONLY!
 	    
 	      // set username/password
-	      if (apnusername) {
+	      if (apnusername[0]) {
 	        // Send command AT+SAPBR=3,1,"USER","<user>" where <user> is the configured APN username.
 	        if (! sendCheckReplyQuoted(F("AT+SAPBR=3,1,\"USER\","), apnusername, ok_reply, 10000))
 	          return false;
 	      }
-	      if (apnpassword) {
+	      if (apnpassword[0]) {
 	        // Send command AT+SAPBR=3,1,"PWD","<password>" where <password> is the configured APN password.
 	        if (! sendCheckReplyQuoted(F("AT+SAPBR=3,1,\"PWD\","), apnpassword, ok_reply, 10000))
 	          return false;
@@ -1585,13 +1605,13 @@ boolean Adafruit_FONA_3G::enableGPRS(boolean onoff) {
 
 
     // set bearer profile access point name
-    if (apn) {
+    if (apn[0]) {
       // Send command AT+CGSOCKCONT=1,"IP","<apn value>" where <apn value> is the configured APN name.
       if (! sendCheckReplyQuoted(F("AT+CGSOCKCONT=1,\"IP\","), apn, ok_reply, 10000))
         return false;
 
       // set username/password
-      if (apnusername) {
+      if (apnusername[0]) {
 				char authstring[100] = "AT+CGAUTH=1,1,\"";
 				char *strp = authstring + strlen(authstring);
 				prog_char_strcpy(strp, (prog_char *)apnusername);
@@ -1600,7 +1620,7 @@ boolean Adafruit_FONA_3G::enableGPRS(boolean onoff) {
 				strp++;
 				strp[0] = 0;
 
-				if (apnpassword) {
+				if (apnpassword[0]) {
 				  strp[0] = ','; strp++;
 				  strp[0] = '\"'; strp++;
 				  prog_char_strcpy(strp, (prog_char *)apnpassword);
@@ -1650,11 +1670,50 @@ int8_t Adafruit_FONA::GPRSstate(void) {
 }
 
 void Adafruit_FONA::setNetworkSettings(FONAFlashStringPtr apn,
-              FONAFlashStringPtr username, FONAFlashStringPtr password) {
-  this->apn = apn;
-  this->apnusername = username;
-  this->apnpassword = password;
+				       FONAFlashStringPtr username, FONAFlashStringPtr password) {
+  if (apn) {
+    prog_char_strcpy(this->apn, (prog_char *)apn);
+  }
+  else {
+    this->apn[0]='\0';
+  }
+  if (username) {
+    prog_char_strcpy(this->apnusername, (prog_char *)username);
+  }
+  else {
+    this->apnusername[0]='\0';
+  }
+  if (password) {
+    prog_char_strcpy(this->apnpassword, (prog_char *)password);
+  }
+  else {
+    this->apnpassword[0]='\0';
+  }
+  
+  if (_type >= SIM7000A) sendCheckReplyQuoted(F("AT+CGDCONT=1,\"IP\","), apn, ok_reply, 10000);
+}
 
+void Adafruit_FONA::setNetworkSettings(const char *apn,
+				       const char *username, const char *password) {
+  if (apn) {
+    strcpy(this->apn, apn);
+  }
+  else {
+    this->apn[0]='\0';
+  }
+  if (username) {
+    strcpy(this->apnusername, username);
+  }
+  else {
+    this->apnusername[0]='\0';
+  }
+  if (password) {
+    strcpy(this->apnpassword, password);
+  }
+  else {
+    this->apnpassword[0]='\0';
+  }
+  
   if (_type >= SIM7000A) sendCheckReplyQuoted(F("AT+CGDCONT=1,\"IP\","), apn, ok_reply, 10000);
 }
 
@@ -2420,15 +2479,15 @@ boolean Adafruit_FONA::MQTTsubscribe(const char* topic, byte QoS) {
 }
 
 boolean Adafruit_FONA::MQTTunsubscribe(const char* topic) {
-
+  return true;
 }
 
 boolean Adafruit_FONA::MQTTreceive(const char* topic, const char* buf, int maxlen) {
-
+  return true;
 }
 
 boolean Adafruit_FONA::MQTTdisconnect(void) {
-	
+  return true;
 }
 
 /********* SIM7000 MQTT FUNCTIONS  ************************************/
@@ -2465,19 +2524,19 @@ boolean Adafruit_FONA_LTE::MQTT_connectionStatus(void) {
 
 // Subscribe to specified MQTT topic
 // QoS can be from 0-2
-boolean Adafruit_FONA_LTE::MQTT_subscribe(const char* topic, byte QoS) {
+boolean Adafruit_FONA_LTE::MQTT_subscribe(const char* topic, byte QoS, fona_timeout_t timeout) {
   char cmdStr[80];
   sprintf(cmdStr, "AT+SMSUB=\"%s\",%i", topic, QoS);
 
-  if (! sendCheckReply(cmdStr, ok_reply)) return false;
+  if (! sendCheckReply(cmdStr, ok_reply, timeout)) return false;
   return true;
 }
 
 // Unsubscribe from specified MQTT topic
-boolean Adafruit_FONA_LTE::MQTT_unsubscribe(const char* topic) {
+boolean Adafruit_FONA_LTE::MQTT_unsubscribe(const char* topic, fona_timeout_t timeout) {
   char cmdStr[80];
   sprintf(cmdStr, "AT+SMUNSUB=\"%s\"", topic);
-  if (! sendCheckReply(cmdStr, ok_reply)) return false;
+  if (! sendCheckReply(cmdStr, ok_reply, timeout)) return false;
   return true;
 }
 
@@ -2488,8 +2547,8 @@ boolean Adafruit_FONA_LTE::MQTT_unsubscribe(const char* topic) {
 boolean Adafruit_FONA_LTE::MQTT_publish(const char* topic, const char* message, uint16_t contentLength, byte QoS, byte retain, fona_timeout_t timeout) {
 
   // Send the publish command and topic
-  char cmdStr[80];
-  sprintf(cmdStr, "AT+SMPUB=\"%s\",%i,%i,%i", topic, contentLength, QoS, retain);
+  char cmdStr[100];
+  snprintf(cmdStr, sizeof(cmdStr), "AT+SMPUB=\"%s\",%i,%i,%i", topic, contentLength, QoS, retain);
   flushInput();
   DEBUG_PRINT(F("\t---> ")); DEBUG_PRINTLN(cmdStr);
   mySerial->println(cmdStr);
@@ -2525,6 +2584,7 @@ boolean Adafruit_FONA_LTE::MQTT_publish(const char* topic, const char* message, 
 // Enter "true" if you want hex, "false" if you don't
 boolean Adafruit_FONA_LTE::MQTT_dataFormatHex(bool yesno) {
   if (yesno) sendCheckReply(F("AT+SMPUBHEX="), yesno, ok_reply);
+  return true;
 }
 
 /********* SSL FUNCTIONS  ************************************/
@@ -2994,7 +3054,7 @@ uint8_t Adafruit_FONA::getReply(const char *send, fona_timeout_t timeout) {
 
   uint8_t l = readline(timeout);
 
-  DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
+  DEBUG_PRINT(F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
 
   return l;
 }
@@ -3010,7 +3070,7 @@ uint8_t Adafruit_FONA::getReply(FONAFlashStringPtr send, fona_timeout_t timeout)
 
   uint8_t l = readline(timeout);
 
-  DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
+  DEBUG_PRINT(F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
 
   return l;
 }
@@ -3093,6 +3153,24 @@ uint8_t Adafruit_FONA::getReplyQuoted(FONAFlashStringPtr prefix, FONAFlashString
   return l;
 }
 
+uint8_t Adafruit_FONA::getReplyQuoted(FONAFlashStringPtr prefix, const char *suffix, fona_timeout_t timeout) {
+  flushInput();
+
+  DEBUG_PRINT(F("\t---> ")); DEBUG_PRINT(prefix);
+  DEBUG_PRINT('"'); DEBUG_PRINT(suffix); DEBUG_PRINTLN('"');
+
+  mySerial->print(prefix);
+  mySerial->print('"');
+  mySerial->print(suffix);
+  mySerial->println('"');
+
+  uint8_t l = readline(timeout);
+
+  DEBUG_PRINT (F("\t<--- ")); DEBUG_PRINTLN(replybuffer);
+
+  return l;
+}
+
 boolean Adafruit_FONA::sendCheckReply(const char *send, const char *reply, fona_timeout_t timeout) {
   if (! getReply(send, timeout) )
 	  return false;
@@ -3147,6 +3225,10 @@ boolean Adafruit_FONA::sendCheckReplyQuoted(FONAFlashStringPtr prefix, FONAFlash
   return (prog_char_strcmp(replybuffer, (prog_char*)reply) == 0);
 }
 
+boolean Adafruit_FONA::sendCheckReplyQuoted(FONAFlashStringPtr prefix, const char *suffix, FONAFlashStringPtr reply, fona_timeout_t timeout) {
+  getReplyQuoted(prefix, suffix, timeout);
+  return (prog_char_strcmp(replybuffer, (prog_char*)reply) == 0);
+}
 
 boolean Adafruit_FONA::parseReply(FONAFlashStringPtr toreply,
           uint16_t *v, char divider, uint8_t index) {
